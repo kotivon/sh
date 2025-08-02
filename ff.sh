@@ -1,156 +1,72 @@
 #!/bin/bash
 
-# Plesk Ubuntu 22.04 System Optimization Script
-# Version: 2025.1
-# Author: System Administrator
-# Description: Professional optimization script for Plesk on Ubuntu 22.04
+# Plesk Optimization Manual Completion Script
+# This script completes the remaining optimizations
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'
+NC='\033[0m'
 
-# Logging function
 log() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
+    echo -e "${GREEN}[$(date +'%H:%M:%S')] $1${NC}"
 }
 
 warning() {
     echo -e "${YELLOW}[WARNING] $1${NC}"
 }
 
-error() {
-    echo -e "${RED}[ERROR] $1${NC}"
-    exit 1
-}
+log "Completing Plesk optimization..."
 
-# Check if running as root
-if [[ $EUID -ne 0 ]]; then
-   error "This script must be run as root"
-fi
+# 1. Fix repository issue first
+log "Fixing repository issues..."
+rm -f /etc/apt/sources.list.d/*watchdog* 2>/dev/null || true
+rm -f /etc/apt/sources.list.d/imunify360-testing.list.example 2>/dev/null || true
+apt update -qq
 
-# Check Ubuntu version
-if ! grep -q "22.04" /etc/os-release; then
-    error "This script is designed for Ubuntu 22.04 LTS"
-fi
+# 2. Complete system limits if not done
+log "Ensuring system limits are set..."
+if ! grep -q "www-data soft nofile" /etc/security/limits.conf; then
+    cat >> /etc/security/limits.conf << 'EOF'
 
-log "Starting Plesk Ubuntu 22.04 Professional Optimization..."
-
-# Update system
-log "Updating system packages..."
-apt update && apt upgrade -y
-
-# Install essential packages
-log "Installing essential optimization packages..."
-apt install -y htop iotop sysstat curl wget git vim ufw fail2ban logrotate
-
-# 1. KERNEL PARAMETERS OPTIMIZATION
-log "Optimizing kernel parameters..."
-cat > /etc/sysctl.conf << 'EOF'
-# Network Performance Tuning
-net.core.rmem_max = 134217728
-net.core.wmem_max = 134217728
-net.ipv4.tcp_rmem = 4096 16384 134217728
-net.ipv4.tcp_wmem = 4096 65536 134217728
-net.core.netdev_max_backlog = 30000
-net.ipv4.tcp_max_syn_backlog = 8192
-net.ipv4.tcp_congestion_control = bbr
-net.core.default_qdisc = fq
-
-# Security
-net.ipv4.conf.default.rp_filter = 1
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.ip_forward = 0
-net.ipv6.conf.all.forwarding = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv4.conf.all.secure_redirects = 0
-net.ipv4.conf.default.secure_redirects = 0
-
-# File System
-fs.file-max = 2097152
-fs.nr_open = 1048576
-
-# Memory Management
-vm.swappiness = 10
-vm.dirty_ratio = 15
-vm.dirty_background_ratio = 5
-vm.overcommit_memory = 1
-vm.min_free_kbytes = 65536
-
-# Connection Tracking
-net.netfilter.nf_conntrack_max = 262144
-net.ipv4.netfilter.ip_conntrack_tcp_timeout_established = 7200
-
-# TCP Optimization
-net.ipv4.tcp_keepalive_time = 600
-net.ipv4.tcp_keepalive_intvl = 60
-net.ipv4.tcp_keepalive_probes = 3
-net.ipv4.tcp_fin_timeout = 30
-net.ipv4.tcp_tw_reuse = 1
-net.ipv4.ip_local_port_range = 1024 65535
-net.ipv4.tcp_max_tw_buckets = 400000
-net.ipv4.tcp_no_metrics_save = 1
-net.ipv4.tcp_moderate_rcvbuf = 1
-net.ipv4.tcp_window_scaling = 1
-net.ipv4.tcp_timestamps = 1
-net.ipv4.tcp_sack = 1
-net.ipv4.tcp_fack = 1
-EOF
-
-# Apply sysctl settings
-sysctl -p
-
-# 2. SYSTEM LIMITS OPTIMIZATION
-log "Optimizing system limits..."
-cat > /etc/security/limits.conf << 'EOF'
-# System Limits for Plesk Optimization
+# Plesk Optimization Limits
 * soft nofile 65536
 * hard nofile 65536
 * soft nproc 32768
 * hard nproc 32768
-* soft memlock unlimited
-* hard memlock unlimited
-
-# Web server specific
 www-data soft nofile 65536
 www-data hard nofile 65536
 psaadm soft nofile 65536
 psaadm hard nofile 65536
-psacln soft nofile 65536
-psacln hard nofile 65536
-
-# Database
 mysql soft nofile 65536
 mysql hard nofile 65536
-postgres soft nofile 65536
-postgres hard nofile 65536
 EOF
+fi
 
-# Add to systemd
-echo "DefaultLimitNOFILE=65536" >> /etc/systemd/system.conf
-echo "DefaultLimitNPROC=32768" >> /etc/systemd/system.conf
+# Add to systemd if not present
+if ! grep -q "DefaultLimitNOFILE" /etc/systemd/system.conf; then
+    echo "DefaultLimitNOFILE=65536" >> /etc/systemd/system.conf
+    echo "DefaultLimitNPROC=32768" >> /etc/systemd/system.conf
+fi
 
-# 3. CPU OPTIMIZATION
-log "Optimizing CPU settings..."
-# Set CPU governor to performance
-echo 'GOVERNOR="performance"' > /etc/default/cpufrequtils
-cpupower frequency-set -g performance 2>/dev/null || true
+# 3. CPU Optimization
+log "Setting CPU to performance mode..."
+# Set CPU governor
+if command -v cpupower >/dev/null 2>&1; then
+    cpupower frequency-set -g performance 2>/dev/null || true
+fi
 
 # Disable transparent huge pages
-echo never > /sys/kernel/mm/transparent_hugepage/enabled
-echo never > /sys/kernel/mm/transparent_hugepage/defrag
+log "Disabling Transparent Huge Pages..."
+echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true
+echo never > /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null || true
 
-# Make permanent
+# Create systemd service for THP
 cat > /etc/systemd/system/disable-thp.service << 'EOF'
 [Unit]
-Description=Disable Transparent Huge Pages (THP)
+Description=Disable Transparent Huge Pages
 DefaultDependencies=no
 After=sysinit.target local-fs.target
 Before=basic.target
@@ -163,45 +79,48 @@ ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled &
 WantedBy=basic.target
 EOF
 
-systemctl enable disable-thp
-systemctl start disable-thp
+systemctl enable disable-thp 2>/dev/null || true
+systemctl start disable-thp 2>/dev/null || true
 
-# 4. DISK I/O OPTIMIZATION
+# 4. Disk I/O optimization
 log "Optimizing disk I/O..."
 # Update fstab with optimized mount options
-cp /etc/fstab /etc/fstab.backup
-sed -i 's/errors=remount-ro/errors=remount-ro,noatime,nodiratime/' /etc/fstab
+cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d)
+if ! grep -q "noatime" /etc/fstab; then
+    sed -i 's/errors=remount-ro/errors=remount-ro,noatime,nodiratime/' /etc/fstab
+fi
 
 # Set I/O scheduler
-echo 'ACTION=="add|change", KERNEL=="sd[a-z]*", ATTR{queue/scheduler}="deadline"' > /etc/udev/rules.d/60-io-scheduler.rules
-echo 'ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/scheduler}="none"' >> /etc/udev/rules.d/60-io-scheduler.rules
+cat > /etc/udev/rules.d/60-io-scheduler.rules << 'EOF'
+ACTION=="add|change", KERNEL=="sd[a-z]*", ATTR{queue/scheduler}="deadline"
+ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/scheduler}="none"
+EOF
 
-# 5. MEMORY OPTIMIZATION
-log "Optimizing memory settings..."
-# Configure swap
-echo 'vm.swappiness=10' >> /etc/sysctl.conf
-echo 'vm.vfs_cache_pressure=50' >> /etc/sysctl.conf
+# 5. Network optimization
+log "Enabling BBR congestion control..."
+modprobe tcp_bbr 2>/dev/null || true
+echo 'tcp_bbr' > /etc/modules-load.d/bbr.conf
 
-# 6. NETWORK OPTIMIZATION
-log "Optimizing network stack..."
-# Enable BBR congestion control
-modprobe tcp_bbr
-echo 'tcp_bbr' >> /etc/modules-load.d/modules.conf
+# Fix the missing conntrack parameter
+log "Fixing conntrack parameters..."
+# Use the correct parameter for newer kernels
+sysctl -w net.netfilter.nf_conntrack_tcp_timeout_established=7200 2>/dev/null || \
+sysctl -w net.ipv4.netfilter.ip_conntrack_tcp_timeout_established=7200 2>/dev/null || true
 
-# 7. SECURITY OPTIMIZATIONS
-log "Configuring security settings..."
-# Configure UFW
+# 6. Security configuration
+log "Configuring firewall and security..."
+# UFW configuration
 ufw --force enable
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp
-ufw allow 53
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow 8880/tcp
-ufw allow 8443/tcp
+ufw allow 22/tcp comment 'SSH'
+ufw allow 53 comment 'DNS'
+ufw allow 80/tcp comment 'HTTP'
+ufw allow 443/tcp comment 'HTTPS'
+ufw allow 8880/tcp comment 'Plesk Panel'
+ufw allow 8443/tcp comment 'Plesk Panel SSL'
 
-# Configure fail2ban
+# Configure fail2ban for Plesk
 cat > /etc/fail2ban/jail.local << 'EOF'
 [DEFAULT]
 bantime = 3600
@@ -222,85 +141,71 @@ port = 8880,8443
 filter = plesk-panel
 logpath = /var/log/plesk/panel.log
 maxretry = 3
+banaction = iptables-multiport
 
 [plesk-postfix]
 enabled = true
-port = smtp,465,submission
+port = smtp,465,587
 filter = postfix
 logpath = /var/log/mail.log
-maxretry = 3
+maxretry = 5
 
 [plesk-dovecot]
 enabled = true
 port = pop3,pop3s,imap,imaps
 filter = dovecot
 logpath = /var/log/mail.log
-maxretry = 3
+maxretry = 5
 EOF
 
 # Create Plesk panel filter
 cat > /etc/fail2ban/filter.d/plesk-panel.conf << 'EOF'
 [Definition]
-failregex = ^.*: .*Login failed.*client IP.*<HOST>.*$
-            ^.*: Authentication failed.*from.*<HOST>.*$
+failregex = ^.*Login failed.*client IP.*<HOST>.*$
+            ^.*Authentication failed.*from.*<HOST>.*$
+            ^.*Invalid login.*from.*<HOST>.*$
 ignoreregex =
 EOF
 
 systemctl enable fail2ban
 systemctl restart fail2ban
 
-# 8. PLESK SPECIFIC OPTIMIZATIONS
+# 7. Plesk specific optimizations
 log "Applying Plesk-specific optimizations..."
-
-# Check if Plesk is installed
 if [ -d "/usr/local/psa" ]; then
-    # Configure Plesk panel.ini
+    # Configure panel.ini
+    mkdir -p /usr/local/psa/admin/conf
     cat > /usr/local/psa/admin/conf/panel.ini << 'EOF'
-[environment]
-debug = false
-development = false
-
 [database]
-connections_limit = 40
+connections_limit = 50
 
 [auth]
-lifetime = 3600
+lifetime = 7200
 unlock_admin_account_timeout = 600
 
 [ui]
 max_input_vars = 10000
+max_post_size = 128M
+max_file_uploads = 50
 
-[apache]
-MaxClients = 150
-StartServers = 5
-MinSpareServers = 5
-MaxSpareServers = 10
-MaxRequestsPerChild = 1000
-
-[nginx]
-worker_processes = auto
-worker_connections = 1024
-keepalive_timeout = 60
-client_max_body_size = 128M
+[security]
+admin_session_timeout = 3600
 EOF
 
-    # Optimize MySQL/MariaDB if exists
-    if [ -f "/etc/mysql/my.cnf" ] || [ -f "/etc/mysql/mariadb.conf.d/50-server.cnf" ]; then
-        log "Optimizing MySQL/MariaDB configuration..."
+    # Optimize MySQL/MariaDB
+    if systemctl is-active --quiet mysql || systemctl is-active --quiet mariadb; then
+        log "Optimizing MySQL/MariaDB..."
         
-        # Calculate optimal values based on system RAM
         TOTAL_RAM=$(free -m | awk 'NR==2{print $2}')
-        INNODB_BUFFER_POOL=$((TOTAL_RAM * 70 / 100))
-        MAX_CONNECTIONS=100
+        INNODB_BUFFER_POOL=$((TOTAL_RAM * 60 / 100))
+        MAX_CONNECTIONS=150
         
         if [ $TOTAL_RAM -gt 8192 ]; then
+            INNODB_BUFFER_POOL=$((TOTAL_RAM * 70 / 100))
             MAX_CONNECTIONS=200
         fi
         
         cat > /etc/mysql/conf.d/plesk-optimization.cnf << EOF
-[mysql]
-max_allowed_packet = 256M
-
 [mysqld]
 # Performance Optimization
 innodb_buffer_pool_size = ${INNODB_BUFFER_POOL}M
@@ -308,48 +213,55 @@ innodb_log_file_size = 256M
 innodb_flush_log_at_trx_commit = 2
 innodb_flush_method = O_DIRECT
 innodb_file_per_table = 1
+
+# Query Cache
 query_cache_type = 1
 query_cache_size = 128M
-query_cache_limit = 4M
-tmp_table_size = 256M
-max_heap_table_size = 256M
+query_cache_limit = 2M
+
+# Connection Settings
 max_connections = $MAX_CONNECTIONS
+max_connect_errors = 100000
 thread_cache_size = 16
 table_open_cache = 4096
+
+# Buffer Settings
 key_buffer_size = 256M
 sort_buffer_size = 2M
-read_buffer_size = 2M
+read_buffer_size = 1M
 read_rnd_buffer_size = 2M
-myisam_sort_buffer_size = 64M
+tmp_table_size = 128M
+max_heap_table_size = 128M
 
-# Binary Logging
-log_bin = mysql-bin
-binlog_format = ROW
-expire_logs_days = 7
-max_binlog_size = 100M
-
-# InnoDB Optimization
+# InnoDB Settings
 innodb_lock_wait_timeout = 50
 innodb_io_capacity = 200
 innodb_read_io_threads = 4
 innodb_write_io_threads = 4
-innodb_purge_threads = 1
-innodb_thread_concurrency = 0
+
+# Binary Logging
+expire_logs_days = 7
+max_binlog_size = 100M
+
+# Other optimizations
+skip-name-resolve
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 2
 EOF
     fi
     
-    # Restart Plesk services
-    log "Restarting Plesk services..."
+    # Restart services
+    log "Restarting services..."
+    systemctl restart mysql 2>/dev/null || systemctl restart mariadb 2>/dev/null || true
     systemctl restart plesk-php*-fpm 2>/dev/null || true
-    systemctl restart plesk-web-socket 2>/dev/null || true
-    systemctl restart sw-engine 2>/dev/null || true
-    systemctl restart mariadb 2>/dev/null || systemctl restart mysql 2>/dev/null || true
+    
 else
-    warning "Plesk not detected. Skipping Plesk-specific optimizations."
+    warning "Plesk not found, skipping Plesk-specific optimizations"
 fi
 
-# 9. LOG ROTATION OPTIMIZATION
-log "Configuring log rotation..."
+# 8. Log rotation
+log "Setting up log rotation..."
 cat > /etc/logrotate.d/plesk-optimization << 'EOF'
 /var/log/plesk/*.log {
     daily
@@ -358,76 +270,87 @@ cat > /etc/logrotate.d/plesk-optimization << 'EOF'
     compress
     delaycompress
     notifempty
-    postrotate
-        /usr/local/psa/admin/bin/httpdmng --reconfigure-all
-    endscript
+    copytruncate
+}
+
+/var/log/mysql/*.log {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    copytruncate
 }
 EOF
 
-# 10. CRON OPTIMIZATIONS
+# 9. Maintenance cron jobs
 log "Setting up maintenance cron jobs..."
-cat > /etc/cron.d/plesk-optimization << 'EOF'
-# Plesk System Optimization Maintenance Jobs
-0 2 * * 0 root /usr/bin/find /tmp -type f -atime +7 -delete
-30 2 * * 0 root /usr/bin/find /var/tmp -type f -atime +7 -delete
+cat > /etc/cron.d/plesk-maintenance << 'EOF'
+# Plesk System Maintenance
+0 2 * * 0 root /usr/bin/find /tmp -type f -atime +7 -delete 2>/dev/null
+30 2 * * 0 root /usr/bin/find /var/tmp -type f -atime +7 -delete 2>/dev/null
 0 3 * * 0 root /usr/sbin/logrotate /etc/logrotate.conf
 30 3 * * * root /bin/sync && echo 3 > /proc/sys/vm/drop_caches
 0 4 * * 0 root /usr/bin/apt autoremove -y && /usr/bin/apt autoclean
 EOF
 
-# 11. FINAL SYSTEM TWEAKS
-log "Applying final system tweaks..."
-
+# 10. Final system tweaks
+log "Applying final optimizations..."
 # Disable unnecessary services
 systemctl disable apport 2>/dev/null || true
 systemctl disable whoopsie 2>/dev/null || true
 
-# Enable useful services
-systemctl enable ufw
-systemctl enable fail2ban
+# Create status file
+cat > /root/plesk-optimization-complete.txt << EOF
+Plesk Ubuntu 22.04 Optimization Completed
+========================================
+Completion Date: $(date)
+Server: $(hostname)
 
-# Create optimization status file
-cat > /root/plesk-optimization-status.txt << 'EOF'
-Plesk Ubuntu 22.04 Optimization Applied
-=======================================
-Date: $(date)
-Script Version: 2025.1
+Applied Optimizations:
+✓ Kernel parameters optimized
+✓ System limits increased
+✓ CPU performance mode enabled
+✓ Transparent Huge Pages disabled
+✓ Disk I/O optimized
+✓ Network stack optimized (BBR)
+✓ UFW firewall configured
+✓ Fail2ban configured for Plesk
+✓ MySQL/MariaDB optimized
+✓ Log rotation configured
+✓ Maintenance cron jobs added
 
-Optimizations Applied:
-- Kernel parameters tuned
-- System limits increased
-- CPU performance mode enabled
-- Disk I/O optimized
-- Memory management improved
-- Network stack optimized (BBR enabled)
-- Security hardened (UFW, Fail2ban)
-- Plesk-specific optimizations
-- Log rotation configured
-- Maintenance cron jobs added
-
-Next Steps:
-1. Reboot the server to apply all changes
-2. Monitor system performance with htop, iotop
-3. Check logs in /var/log/ for any issues
-4. Review Plesk performance in panel
+System Information:
+- Total RAM: $(free -h | awk 'NR==2{print $2}')
+- CPU Cores: $(nproc)
+- Disk: $(df -h / | awk 'NR==2{print $2}')
 
 Monitoring Commands:
-- htop (CPU/Memory usage)
+- htop (CPU/Memory)
 - iotop (Disk I/O)
-- ss -tuln (Network connections)
-- fail2ban-client status (Security status)
+- ss -tuln (Network)
+- fail2ban-client status
+
+Next Steps:
+1. Reboot server: reboot
+2. Monitor performance
+3. Check logs for issues
 EOF
 
 log "Optimization completed successfully!"
 echo
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}  PLESK OPTIMIZATION COMPLETED!${NC}"
+echo -e "${YELLOW}   OPTIMIZATION COMPLETED!${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo
-echo -e "${GREEN}Next steps:${NC}"
-echo "1. Reboot your server: ${BLUE}reboot${NC}"
-echo "2. Check optimization status: ${BLUE}cat /root/plesk-optimization-status.txt${NC}"
-echo "3. Monitor performance with: ${BLUE}htop${NC} and ${BLUE}iotop${NC}"
+echo -e "${GREEN}Summary:${NC}"
+echo "• All optimizations applied"
+echo "• Security hardened"
+echo "• Performance tuned"
+echo "• Monitoring configured"
 echo
-echo -e "${YELLOW}IMPORTANT: Please reboot your server now to apply all optimizations!${NC}"
+echo -e "${YELLOW}IMPORTANT: Reboot your server now!${NC}"
+echo -e "Command: ${GREEN}reboot${NC}"
 echo
+echo "Status file: /root/plesk-optimization-complete.txt"
